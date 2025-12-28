@@ -143,6 +143,7 @@ class RAGFlowConnector:
         rerank_id: str | None = None,
         keyword: bool = False,
         force_refresh: bool = False,
+        metadata_condition: dict | None = None,
     ):
         if document_ids is None:
             document_ids = []
@@ -174,6 +175,7 @@ class RAGFlowConnector:
             "question": question,
             "dataset_ids": dataset_ids,
             "document_ids": document_ids,
+            "metadata_condition": metadata_condition,
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
         res = self._post("/retrieval", json=data_json)
@@ -367,7 +369,7 @@ async def list_tools(*, connector) -> list[types.Tool]:
     return [
         types.Tool(
             name="ragflow_retrieval",
-            description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question. You can optionally specify dataset_ids to search only specific datasets, or omit dataset_ids entirely to search across ALL available datasets. You can also optionally specify document_ids to search within specific documents. When dataset_ids is not provided or is empty, the system will automatically search across all available datasets. Below is the list of all available datasets, including their descriptions and IDs:"
+            description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question. You can optionally specify dataset_ids to search only specific datasets, or omit dataset_ids entirely to search across ALL available datasets. You can also optionally specify document_ids to search within specific documents. Use metadata_condition to filter by document metadata when the user explicitly specifies criteria. When dataset_ids is not provided or is empty, the system will automatically search across all available datasets. Below is the list of all available datasets, including their descriptions and IDs:"
             + dataset_description,
             inputSchema={
                 "type": "object",
@@ -434,6 +436,27 @@ async def list_tools(*, connector) -> list[types.Tool]:
                         "description": "Set to true only if fresh dataset and document metadata is explicitly required. Otherwise, cached metadata is used (default: false).",
                         "default": False,
                     },
+                    "metadata_condition": {
+                        "type": "object",
+                        "description": "Filter results by document metadata. When user explicitly specifies filter criteria like 'department is Engineering' or 'year > 2023', construct conditions exactly as specified. Each condition: name (field key), comparison_operator, value. Combine with logic 'and'/'or'.",
+                        "properties": {
+                            "conditions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "comparison_operator": {
+                                            "type": "string",
+                                            "enum": ["is", "not is", "contains", "not contains", ">", "<", "≥", "≤", "empty", "not empty"]
+                                        },
+                                        "value": {"type": "string"}
+                                    }
+                                }
+                            },
+                            "logic": {"type": "string", "enum": ["and", "or"]}
+                        }
+                    },
                 },
                 "required": ["question"],
             },
@@ -456,8 +479,8 @@ async def call_tool(name: str, arguments: dict, *, connector) -> list[types.Text
         top_k = arguments.get("top_k", 1024)
         rerank_id = arguments.get("rerank_id")
         force_refresh = arguments.get("force_refresh", False)
+        metadata_condition = arguments.get("metadata_condition")
 
-        
         # If no dataset_ids provided or empty list, get all available dataset IDs
         if not dataset_ids:
             dataset_list_str = connector.list_datasets()
@@ -486,6 +509,7 @@ async def call_tool(name: str, arguments: dict, *, connector) -> list[types.Text
             top_k=top_k,
             rerank_id=rerank_id,
             force_refresh=force_refresh,
+            metadata_condition=metadata_condition,
         )
     raise ValueError(f"Tool not found: {name}")
 
